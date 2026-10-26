@@ -29,7 +29,7 @@ import { api } from '../services/api'
 //   y services/api.js (que lo lee fuera de React con getState()).
 // =====================================================================
 
-// Llaves que usaba la version anterior (helpers saveSession/getSession en api.js).
+// Llaves que usaba la version anterior (los helpers de sesion de api.js).
 // Ya no se usan: las borramos una sola vez al cargar este archivo para que no queden
 // datos viejos (token y usuario) olvidados en el navegador.
 localStorage.removeItem('syncpos_token')

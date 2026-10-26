@@ -8,11 +8,11 @@ const API_URL = import.meta.env.VITE_API_URL
 
 // ---- Sesion ----
 // MIGRACION (antes -> ahora):
-//   ANTES: este archivo tenia saveSession/getSession/clearSession (localStorage a mano) y
-//          avisaba a App.jsx con un evento de window ('syncpos:logout').
+//   ANTES: este archivo tenia helpers propios de sesion (localStorage a mano) y
+//          avisaba a App.jsx con un evento de window cuando el token vencia.
 //   AHORA: la sesion vive en useAuthStore (Zustand + persist). Aqui solo la LEEMOS.
 //
-// HOOK/STORE: api.js NO es un componente, asi que no puede usar el hook useAuthStore().
+// HOOK/STORE: api.js NO es un componente, asi que no puede usar el hook de React (useAuthStore como funcion).
 // Para leer el store fuera de React existe getState(): devuelve el estado actual en ese
 // instante. No suscribe a nada (no hay re-dibujos), solo lee. Se usa dentro de request(),
 // porque asi se lee el token mas reciente en cada peticion.
