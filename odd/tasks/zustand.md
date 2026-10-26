@@ -26,7 +26,7 @@ Move the state that is really global in the SyncPOS web panel to Zustand stores,
 - [x] Z3 `useCartStore` with persist for CashierPos (add/increment/decrement/remove/clear, stock cap, payment method, `registerSale` async with loading/error) (delegated writer)
 - [x] Z4 `useInventoryStore` for Inventory (products, categories, filters, page, fetch/save/toggle with loading/error) (delegated writer)
 - [x] Z5 README "Manejo de estado" + `docs/analisis-estado.md` (delegated writer)
-- [ ] Z6 Parent verification: build, lint, browser E2E (login/logout, reload keeps session, role guards, 401 logout, inventory CRUD, POS cart survives reload, sale registers), Local Storage keys inspected
+- [x] Z6 Parent verification: build, lint, browser E2E (login/logout, reload keeps session, role guards, 401 logout, inventory CRUD, POS cart survives reload, sale registers), Local Storage keys inspected
 
 ## Checks
 - TDD: off. Runner: `npm run build` + `npm run lint`; browser E2E by the parent.
@@ -35,3 +35,4 @@ Move the state that is really global in the SyncPOS web panel to Zustand stores,
 ## Progress
 - 2026-10-26: Branch `feature/zustand` created from main, plan written.
 - 2026-10-26: Z1-Z5 implemented by delegated writer. Commits: Z1 71033b8, Z2 f326561, Z3 1d7f910, Z4 49109b4, Z5 docs. build + lint pass; grep checks clean (no whole-store subscriptions, no old session helpers, no push in store). Note: Z1 commit alone does not build (Login still used removed helpers until Z2). Open point: logout does not clear the persisted cart (listed as a group question in docs). Z6 (browser E2E) pending, owned by parent.
+- 2026-10-26: Parent fix: `logoutLocal()` now empties the persisted cart (commit 79ae7a6). Parent verification (build + lint exit 0, browser E2E against Laravel on a temporary SQLite DB): legacy keys `syncpos_token`/`syncpos_user` removed on load; wrong password -> "Credenciales incorrectas." from the store; login -> `/punto-de-venta`, Header shows the user from the store; Local Storage holds only `syncpos-auth` {user,token} (no password) and `syncpos-cart` {items,paymentMethod}; cart (2 products, $ 36.700, Nequi) survived a page reload; sale #V-20 registered and emptied the cart; logout with an item in the cart -> cart emptied, auth null, `/login`; admin -> `/dashboard`; inventory list (10), debounced search, toggle activo and back, create with 422 under "Precio de venta" then valid create (11 products); admin typing `/punto-de-venta` -> `/dashboard`; expired token -> 401 -> session cleared -> `/login` with no request loop.
