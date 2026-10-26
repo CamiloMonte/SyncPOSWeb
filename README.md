@@ -1,32 +1,81 @@
 # SyncPOS
 
 Panel web de punto de venta (POS) e inventario, hecho con React como proyecto de aprendizaje del SENA.
-Todas las pantallas leen y guardan sus datos en una API de Laravel (ver "Conectar con la API").
+Todas las pantallas leen y guardan sus datos en una API de Laravel (ver "Instalación en otro computador").
 
-## Cómo ejecutarlo
+## Instalación en otro computador
+
+Esta web necesita la **API de Laravel** funcionando: [CamiloMonte/SyncPOSBackend](https://github.com/CamiloMonte/SyncPOSBackend).
+**Instala primero el backend** siguiendo su README (XAMPP, base de datos `syncpos`, `php artisan serve`).
+
+### 1. Programas necesarios (una sola vez)
+
+| Programa | Para qué | Versión |
+|---|---|---|
+| **Git** | Descargar el proyecto | Cualquiera |
+| **Node.js** | Ejecutar la web | **20.19 o superior** (Vite 8 lo exige). Descarga la versión **LTS** |
+
+### 2. Descargar y ejecutar
+
+En **otra** terminal de Git Bash (la del backend debe quedar abierta con `php artisan serve`):
 
 ```bash
-npm install     # instala las dependencias (solo la primera vez)
-npm run dev     # abre el servidor de desarrollo (normalmente http://localhost:5173)
-npm run build   # genera la versión para producción
+cd ~/Desktop
+git clone https://github.com/CamiloMonte/SyncPOSWeb.git
+cd SyncPOSWeb
+npm install                  # instala las dependencias (solo la primera vez)
+cp .env.example .env         # define la dirección de la API
+npm run dev                  # abre la web en http://localhost:5173
+```
+
+El archivo `.env` trae la dirección de la API (Vite solo expone las variables que empiezan por `VITE_`):
+
+```
+VITE_API_URL=http://127.0.0.1:8000/api
+```
+
+Si cambias el `.env`, reinicia `npm run dev`.
+
+### 3. Entrar
+
+Abre **http://localhost:5173**. Usuarios de prueba (contraseña `password`):
+
+| Rol | Correo |
+|---|---|
+| Administrador | `admin@syncpos.co` |
+| Cajero | `cajero@syncpos.co` |
+
+El rol lo define la API: el administrador entra al Dashboard y el cajero al Punto de Venta.
+
+**¿Está todo bien conectado?** En el login, la píldora debe decir 🟢 **"Servidor Conectado (MySQL)"**.
+
+| La píldora dice | Qué revisar |
+|---|---|
+| 🔴 "Sin conexión con el servidor" | Que `php artisan serve` esté corriendo en la carpeta del backend |
+| 🔴 "Base de datos sin conexión" | Que MySQL esté encendido en XAMPP y los datos del `.env` del backend |
+
+### Errores comunes
+
+| Error | Solución |
+|---|---|
+| `npm install` falla por la versión | Node.js es muy viejo: instala la versión LTS |
+| `npm` "no se reconoce como comando" | Cierra y vuelve a abrir la terminal después de instalar Node.js |
+| La página carga pero no deja iniciar sesión | La API no está encendida (ver la píldora) |
+
+### Uso diario (después de instalarlo)
+
+1. Backend encendido (`php artisan serve` con MySQL de XAMPP).
+2. En la carpeta de la web: `npm run dev`.
+
+### Otros comandos
+
+```bash
+npm run build   # genera la versión para producción (carpeta dist/)
 npm run lint    # revisa el código en busca de errores
 ```
 
-Para iniciar sesión necesitas la API encendida (ver la sección siguiente).
-
-## Conectar con la API (Laravel)
-
-1. Enciende la API de Laravel desde su carpeta: `php artisan serve` (queda en `http://127.0.0.1:8000`).
-2. El archivo `.env` de este proyecto define la dirección de la API. Vite solo expone las variables
-   que empiezan por `VITE_`:
-   ```
-   VITE_API_URL=http://127.0.0.1:8000/api
-   ```
-   Si no existe, cópialo desde `.env.example`. Reinicia `npm run dev` después de cambiarlo.
-3. Usuarios de prueba (contraseña `password`): `admin@syncpos.co` (administrador) y
-   `cajero@syncpos.co` (cajero). El rol lo define la API, ya no se elige en el login.
-4. Todas las peticiones pasan por `src/services/api.js`. El token y el usuario se guardan en
-   `localStorage`, por eso la sesión sigue activa al recargar la página.
+Todas las peticiones pasan por `src/services/api.js`. El token y el usuario se guardan en
+`localStorage`, por eso la sesión sigue activa al recargar la página.
 
 Toda la app está conectada a la API: sesión, inventario, punto de venta, historial, dashboard,
 reportes y mis ventas. Ya no hay datos de ejemplo (se eliminó `mockData.js`).
