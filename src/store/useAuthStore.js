@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { api } from '../services/api'
+import { useCartStore } from './useCartStore'
 
 // =====================================================================
 // STORE: useAuthStore  (sesion del usuario)
@@ -86,7 +87,15 @@ export const useAuthStore = create(
       // Borra la sesion SOLO en este navegador (no llama a la API).
       // api.js usa esta version cuando recibe un 401: si llamara a logout() intentaria
       // POST /logout con un token invalido, recibiria otro 401 y entraria en un ciclo infinito.
-      logoutLocal: () => set({ user: null, token: null, error: '' }),
+      // Tambien vacia el carrito del cajero: el carrito se guarda en localStorage
+      // (persist), asi que si no se borrara aqui, el siguiente cajero que inicie sesion
+      // en este mismo computador veria los productos del anterior.
+      // getState() permite usar un store desde otro store sin estar en un componente.
+      logoutLocal: () => {
+        useCartStore.getState().clear()
+        useCartStore.getState().setPaymentMethod('efectivo')
+        set({ user: null, token: null, error: '' })
+      },
 
       // Pregunta derivada: no se guarda como estado, se calcula con get() cada vez.
       // OJO: como es una funcion, en un componente se usa asi:

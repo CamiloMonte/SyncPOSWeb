@@ -74,5 +74,5 @@ graph TD
 
 1. ¿El carrito debería mostrarse también fuera de `CashierPos` (por ejemplo un contador en el `Sidebar`)? Si sí, ya está listo en el store.
 2. ¿Conviene mover las categorías a un store propio y que `Inventory` y `CashierPos` compartan la misma lista?
-3. ¿Qué pasa con el carrito guardado si otro cajero inicia sesión en el mismo navegador? (Hoy `logout()` no lo vacía.)
+3. ~~¿Qué pasa con el carrito guardado si otro cajero inicia sesión en el mismo navegador?~~ **Resuelto:** al cerrar sesión (o si la sesión vence), `logoutLocal()` de `useAuthStore` vacía el carrito con `useCartStore.getState().clear()`, así el siguiente cajero empieza con el carrito vacío.
 4. Un token en `localStorage` puede ser leído por scripts. ¿Qué cambiaría si el backend usara cookies `httpOnly`?
