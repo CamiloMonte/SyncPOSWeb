@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { WifiOff, Package, TrendingUp, Mail, Lock } from 'lucide-react'
 import ServerStatus from '../components/ServerStatus'
 import Button from '../components/Button'
-import { api, saveSession } from '../services/api'
+import { useAuthStore } from '../store/useAuthStore'
+import { homeFor } from '../utils/homeFor'
 
 // Características que se muestran en el panel izquierdo
 const features = [
@@ -11,12 +13,24 @@ const features = [
   { icon: TrendingUp, title: 'Rentabilidad clara', text: 'Conoce tu ganancia por producto y por período.' },
 ]
 
-export default function Login({ onLogin }) {
-  // Formulario controlado: cada campo tiene su propio estado
+export default function Login() {
+  // Formulario controlado: cada campo tiene su propio estado LOCAL.
+  // Zustand no reemplaza a useState: lo que escribe el usuario en un input solo le importa
+  // a este componente. La contrasena nunca debe ir a un store (y menos a uno con persist).
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  // Error de validacion del formulario (campos vacios). El error de la API vive en el store.
+  const [formError, setFormError] = useState('')
+
+  // HOOK: useAuthStore con selectores. Un selector por cada dato o accion que necesitamos,
+  // asi Login solo se redibuja cuando ESE dato cambia.
+  const login = useAuthStore((state) => state.login)
+  const loading = useAuthStore((state) => state.loading)
+  const apiError = useAuthStore((state) => state.error)
+  const clearError = useAuthStore((state) => state.clearError)
+
+  // HOOK: useNavigate devuelve una funcion para cambiar de URL desde el codigo
+  const navigate = useNavigate()
 
   // HOOK: useEffect con [] se ejecuta una sola vez, al mostrar el login.
   // Cambia el titulo de la pestana del navegador (las demas paginas lo hacen en App.jsx).
@@ -30,25 +44,25 @@ export default function Login({ onLogin }) {
 
     // Validación sencilla: ambos campos son obligatorios
     if (email.trim() === '' || password.trim() === '') {
-      setError('Ingresa tu correo y tu contraseña.')
+      setFormError('Ingresa tu correo y tu contraseña.')
       return
     }
 
-    setError('')
-    setLoading(true)
-    try {
-      // POST /login: la API devuelve un token y los datos del usuario (incluido su rol)
-      const { token, user } = await api.post('/login', { email, password })
-      saveSession(token, user) // guarda la sesión en localStorage
-      onLogin(user)
-    } catch (err) {
-      // Muestra el mensaje de la API (por ejemplo "Credenciales incorrectas.")
-      setError(err.message)
-    } finally {
-      // finally se ejecuta siempre, haya salido bien o mal
-      setLoading(false)
+    setFormError('')
+    clearError()
+
+    // La accion login() del store hace el POST /login, guarda user + token y maneja
+    // loading/error. Devuelve true si salio bien.
+    const ok = await login(email, password)
+    if (ok) {
+      // getState() lee el usuario recien guardado sin esperar a que React redibuje.
+      // replace: true -> /login se reemplaza en el historial, asi "atras" no regresa al formulario
+      navigate(homeFor(useAuthStore.getState().user), { replace: true })
     }
   }
+
+  // Mostramos primero el error del formulario y, si no hay, el que dejo la API en el store
+  const error = formError || apiError
 
   return (
     <div className="flex h-screen">

@@ -1,8 +1,16 @@
 import { Bell, ChevronDown } from 'lucide-react'
 import ServerStatus from './ServerStatus'
+import { useAuthStore } from '../store/useAuthStore'
 
 // Barra superior blanca: título de la página a la izquierda, usuario a la derecha.
-export default function Header({ title, subtitle, user }) {
+// Props: title y subtitle. El usuario ya no llega por props: se lee del store.
+export default function Header({ title, subtitle }) {
+  // HOOK: useAuthStore con selector. Se suscribe solo al usuario, no a todo el store.
+  const user = useAuthStore((state) => state.user)
+
+  // Sin usuario (sesion recien cerrada) no hay nada que mostrar; ProtectedRoute redirige a /login
+  if (!user) return null
+
   // Iniciales: primera letra de las dos primeras palabras. "Andrés Díaz" -> "AD"
   const initials = user.name
     .split(' ')
