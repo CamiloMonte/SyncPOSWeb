@@ -1,0 +1,33 @@
+/* Tailwind CSS v4: se importa una sola vez */
+@import "tailwindcss";
+
+/* Colores y fuente del diseño. Tailwind crea clases como bg-sena o text-dark */
+@theme {
+  --color-sena: #39a900;
+  --color-sena-hover: #2e8700;
+  --color-sena-soft: #eef8e6;
+  --color-dark: #0f172a;
+  --color-dark-2: #1e293b;
+  --color-muted: #94a3b8;
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text-secondary: #64748b;
+  --color-online: #22c55e;
+  --color-online-bg: #dcfce7;
+  --color-online-text: #15803d;
+  --color-offline: #f59e0b;
+  --color-offline-bg: #fef3c7;
+  --color-offline-text: #b45309;
+  --color-danger: #ef4444;
+  --color-danger-bg: #fee2e2;
+  --color-danger-text: #b91c1c;
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  background: var(--color-background);
+  color: var(--color-dark);
+}
