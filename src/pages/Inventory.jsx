@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { Search, Download, Plus, Pencil, Power } from 'lucide-react'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import StatusPill from '../components/StatusPill'
-import { api } from '../services/api'
+import { useInventoryStore } from '../store/useInventoryStore'
 import { formatCOP } from '../utils/format'
 
 // Formulario vacio para "Nuevo Producto".
@@ -30,38 +31,56 @@ const SEARCH_DELAY = 400
 
 export default function Inventory() {
   // ---------------------------------------------------------------
-  // ESTADO (useState)
-  // Cada useState guarda un dato que, al cambiar, hace que React vuelva a dibujar la pagina.
+  // ESTADO GLOBAL (Zustand): useInventoryStore
+  // Los productos, categorias, filtros, pagina y el estado de las peticiones viven en el
+  // store (src/store/useInventoryStore.js). Aqui solo los LEEMOS con selectores.
   // ---------------------------------------------------------------
 
-  // Datos que vienen de la API
-  const [products, setProducts] = useState([]) // productos de la pagina actual
-  const [categories, setCategories] = useState([]) // categorias para el filtro y el formulario
-  const [meta, setMeta] = useState(null) // datos de paginacion (pagina actual, total, desde, hasta...)
+  // HOOK: useInventoryStore con selectores. useShallow permite leer varios valores a la vez
+  // devolviendo un objeto: compara campo por campo y solo redibuja si alguno cambio de verdad.
+  const { products, categories, meta, loading, error, saving, formError, fieldErrors, togglingId, page } =
+    useInventoryStore(
+      useShallow((state) => ({
+        products: state.products,
+        categories: state.categories,
+        meta: state.meta,
+        loading: state.loading,
+        error: state.error,
+        saving: state.saving,
+        formError: state.formError,
+        fieldErrors: state.fieldErrors,
+        togglingId: state.togglingId,
+        page: state.page,
+      })),
+    )
+  // Los filtros se leen de uno en uno: son valores simples (texto), no hace falta useShallow.
+  const searchFilter = useInventoryStore((state) => state.filters.search)
+  const categoryId = useInventoryStore((state) => state.filters.categoryId)
 
-  // Estado de la carga de la lista
-  const [loading, setLoading] = useState(true) // true mientras esperamos la respuesta
-  const [error, setError] = useState('') // mensaje si la peticion falla ('' = sin error)
+  // Acciones del store: son funciones estables, seleccionarlas no provoca re-dibujos.
+  const fetchCategories = useInventoryStore((state) => state.fetchCategories)
+  const fetchProducts = useInventoryStore((state) => state.fetchProducts)
+  const setSearchFilter = useInventoryStore((state) => state.setSearch)
+  const setCategory = useInventoryStore((state) => state.setCategory)
+  const setPage = useInventoryStore((state) => state.setPage)
+  const saveProduct = useInventoryStore((state) => state.saveProduct)
+  const toggleProduct = useInventoryStore((state) => state.toggleProduct)
+  const setFormError = useInventoryStore((state) => state.setFormError)
+  const clearFormErrors = useInventoryStore((state) => state.clearFormErrors)
 
-  // Filtros y paginacion
-  const [search, setSearch] = useState('') // lo que el usuario escribe en el cuadro de busqueda (al instante)
-  const [debouncedSearch, setDebouncedSearch] = useState('') // el mismo texto, pero con retraso (es el que se envia a la API)
-  const [categoryId, setCategoryId] = useState('') // '' = todas las categorias
-  const [page, setPage] = useState(1) // numero de pagina que se pide a la API
+  // ---------------------------------------------------------------
+  // ESTADO LOCAL (useState)
+  // Zustand no reemplaza a useState: lo que solo le importa a este componente sigue aqui.
+  // ---------------------------------------------------------------
 
-  // Sirve para volver a pedir la lista sin cambiar ningun filtro (ver el useEffect de productos)
-  const [reloadKey, setReloadKey] = useState(0)
+  // Lo que el usuario escribe en el cuadro de busqueda (al instante, tecla por tecla).
+  // Empieza con el filtro que ya tenga el store, para que ambos coincidan al volver a la pagina.
+  const [search, setSearch] = useState(searchFilter)
 
-  // Boton de activar/desactivar: guardamos el id del producto que se esta procesando
-  const [togglingId, setTogglingId] = useState(null)
-
-  // Modal de crear / editar
+  // Modal de crear / editar (abierto o cerrado, producto en edicion y campos del formulario)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null) // null = producto nuevo
   const [form, setForm] = useState(emptyForm)
-  const [saving, setSaving] = useState(false) // true mientras se envia el formulario
-  const [formError, setFormError] = useState('') // mensaje general de error del modal
-  const [fieldErrors, setFieldErrors] = useState({}) // errores 422 por campo: { precio_venta: ['mensaje'] }
 
   // ---------------------------------------------------------------
   // EFECTOS (useEffect)
@@ -74,103 +93,38 @@ export default function Inventory() {
 
   // 1) Cargar las categorias UNA sola vez (dependencias vacias)
   useEffect(() => {
-    // "ignore" evita actualizar el estado si el componente ya se desmonto
-    // antes de que llegara la respuesta.
-    let ignore = false
+    fetchCategories()
+  }, [fetchCategories])
 
-    async function loadCategories() {
-      try {
-        const response = await api.get('/categorias')
-        // Laravel envuelve la lista dentro de la propiedad "data"
-        if (!ignore) setCategories(response.data)
-      } catch {
-        // Si falla, el filtro y el formulario quedan sin categorias; la lista de productos
-        // sigue funcionando y mostrara su propio error si el servidor no responde.
-      }
-    }
-
-    loadCategories()
-
-    // Funcion de limpieza (cleanup): React la ejecuta cuando el componente se desmonta
-    return () => {
-      ignore = true
-    }
-  }, [])
-
-  // 2) Debounce de la busqueda.
+  // 2) Debounce de la busqueda. Se queda en el componente a proposito: es un asunto de la
+  // interfaz (esperar a que el usuario deje de teclear), no un dato de negocio del store.
   // Problema: si pedimos a la API en cada tecla ("c", "co", "coc", "coca") hacemos muchas
-  // peticiones inutiles. Solucion: esperar a que el usuario deje de escribir 400 ms.
-  // Cada vez que "search" cambia, programamos con setTimeout una actualizacion de
-  // "debouncedSearch". Si el usuario escribe otra letra antes de que pasen los 400 ms,
-  // la funcion de limpieza ejecuta clearTimeout y cancela el temporizador anterior.
-  // Solo el ultimo temporizador llega a ejecutarse.
+  // peticiones inutiles. Solucion: esperar 400 ms despues de la ultima tecla y SOLO entonces
+  // llamar a setSearchFilter (accion del store, que ademas vuelve a la pagina 1).
+  // Si el usuario escribe otra letra antes, la funcion de limpieza cancela el temporizador anterior.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search)
-      setPage(1) // una busqueda nueva siempre empieza en la primera pagina
-    }, SEARCH_DELAY)
+    const timer = setTimeout(() => setSearchFilter(search), SEARCH_DELAY)
 
     // Cleanup: se ejecuta antes del siguiente efecto y al desmontar el componente
     return () => clearTimeout(timer)
-  }, [search])
+  }, [search, setSearchFilter])
 
-  // 3) Cargar los productos cada vez que cambie la pagina, la categoria, la busqueda
-  // (ya con debounce) o "reloadKey" (nuestra forma de pedir "recarga" manual).
+  // 3) Cargar los productos cada vez que cambie la pagina, la categoria o la busqueda
+  // (ya con debounce). fetchProducts() lee los filtros del store con get(), asi que aqui
+  // solo decidimos CUANDO pedirlos. Las respuestas viejas se descartan dentro del store
+  // (contador requestId), por eso este efecto ya no necesita la variable "ignore".
   useEffect(() => {
-    let ignore = false
-
-    async function loadProducts() {
-      setLoading(true)
-      setError('')
-
-      try {
-        // URLSearchParams arma el texto "?buscar=coca&page=2" y codifica bien los caracteres especiales
-        const params = new URLSearchParams({ page })
-        if (debouncedSearch) params.set('buscar', debouncedSearch)
-        if (categoryId) params.set('categoria_id', categoryId)
-
-        const response = await api.get(`/productos?${params}`)
-
-        // Si mientras esperabamos cambio algun filtro, esta respuesta ya es vieja: se descarta.
-        // Asi evitamos que una respuesta lenta pise a una mas reciente.
-        if (ignore) return
-        setProducts(response.data)
-        setMeta(response.meta)
-      } catch (err) {
-        if (!ignore) setError(err.message)
-      } finally {
-        // finally se ejecuta siempre, haya salido bien o mal: aqui apagamos el "cargando"
-        if (!ignore) setLoading(false)
-      }
-    }
-
-    loadProducts()
-
-    return () => {
-      ignore = true
-    }
-  }, [page, categoryId, debouncedSearch, reloadKey])
+    fetchProducts()
+  }, [fetchProducts, page, categoryId, searchFilter])
 
   // ---------------------------------------------------------------
   // FUNCIONES (manejadores de eventos)
   // ---------------------------------------------------------------
 
-  // Cambiar de categoria: tambien volvemos a la pagina 1
-  function handleCategoryChange(value) {
-    setCategoryId(value)
-    setPage(1)
-  }
-
-  // Pide de nuevo la lista actual (boton "Reintentar" y despues de guardar)
-  function reload() {
-    setReloadKey((key) => key + 1)
-  }
-
   function openNew() {
     setEditingId(null)
     setForm(emptyForm)
-    setFormError('')
-    setFieldErrors({})
+    clearFormErrors()
     setModalOpen(true)
   }
 
@@ -188,8 +142,7 @@ export default function Inventory() {
       stock: String(product.stock),
       stock_minimo: String(product.stock_minimo),
     })
-    setFormError('')
-    setFieldErrors({})
+    clearFormErrors()
     setModalOpen(true)
   }
 
@@ -233,57 +186,17 @@ export default function Inventory() {
       stock_minimo: Number(form.stock_minimo),
     }
 
-    setSaving(true)
-    setFormError('')
-    setFieldErrors({})
-
-    try {
-      // POST crea un producto nuevo; PUT reemplaza los datos de uno existente
-      if (editingId) {
-        await api.put(`/productos/${editingId}`, body)
-      } else {
-        await api.post('/productos', body)
-      }
-
-      setModalOpen(false)
-
-      // Volvemos a pedir la pagina actual a la API en lugar de modificar la lista a mano.
-      // Es mas simple y mas seguro: el servidor decide el orden, la paginacion, los
-      // calculos (ganancia, margen, stock_bajo) y si el producto sigue cumpliendo los
-      // filtros activos. Si lo hicieramos a mano tendriamos que repetir toda esa logica
-      // en el navegador y podria quedar distinta de lo que realmente hay en la base de datos.
-      reload()
-    } catch (err) {
-      // 422 = Laravel rechazo los datos. "errors" trae un arreglo de mensajes por campo.
-      if (err.status === 422 && err.errors) {
-        setFieldErrors(err.errors)
-        // Los detalles ya se ven debajo de cada campo, asi que arriba solo damos una pista general.
-        // (El "message" de Laravel en un 422 viene en ingles: "... (and 1 more error)").
-        setFormError('Revisa los campos marcados en rojo.')
-      } else {
-        // Mensaje general arriba del modal para errores que no son de validacion
-        setFormError(err.message)
-      }
-    } finally {
-      setSaving(false)
-    }
+    // La peticion, el manejo de saving y de los errores 422 los hace la accion del store.
+    // Devuelve true si se guardo: entonces cerramos el modal.
+    const ok = await saveProduct(body, editingId)
+    if (ok) setModalOpen(false)
   }
 
   // Activar / desactivar un producto (la API no permite borrar, solo desactivar)
   async function toggleActive(id) {
-    setTogglingId(id) // deshabilita el boton de esa fila mientras dura la peticion
-    try {
-      const response = await api.patch(`/productos/${id}/estado`)
-      // INMUTABILIDAD: en React nunca se modifica el estado directamente (products[0].activo = ...).
-      // Se crea un arreglo NUEVO con map: el producto que coincide se reemplaza por el que
-      // devolvio la API y los demas se dejan igual. React detecta que es un arreglo distinto
-      // y vuelve a dibujar la tabla.
-      setProducts((current) => current.map((p) => (p.id === id ? response.data : p)))
-    } catch (err) {
-      alert(err.message)
-    } finally {
-      setTogglingId(null)
-    }
+    // La accion del store actualiza la lista con map (inmutable). Devuelve un mensaje si fallo.
+    const message = await toggleProduct(id)
+    if (message) alert(message)
   }
 
   // ---------------------------------------------------------------
@@ -310,7 +223,7 @@ export default function Inventory() {
         </div>
         <select
           value={categoryId}
-          onChange={(e) => handleCategoryChange(e.target.value)}
+          onChange={(e) => setCategory(e.target.value)}
           className="h-10 rounded-lg border border-border bg-surface px-3"
         >
           <option value="">Categoría: Todas</option>
@@ -327,7 +240,7 @@ export default function Inventory() {
       {error && (
         <div className="flex items-center justify-between gap-4 rounded-lg border border-danger bg-danger-bg px-4 py-3 text-sm text-danger-text">
           <span>{error}</span>
-          <Button variant="danger" onClick={reload}>Reintentar</Button>
+          <Button variant="danger" onClick={fetchProducts}>Reintentar</Button>
         </div>
       )}
 
@@ -413,7 +326,7 @@ export default function Inventory() {
                 variant="secondary"
                 className="px-3 py-1.5 text-xs"
                 disabled={loading || meta.current_page <= 1}
-                onClick={() => setPage((current) => current - 1)}
+                onClick={() => setPage(page - 1)}
               >
                 Anterior
               </Button>
@@ -421,7 +334,7 @@ export default function Inventory() {
                 variant="secondary"
                 className="px-3 py-1.5 text-xs"
                 disabled={loading || meta.current_page >= meta.last_page}
-                onClick={() => setPage((current) => current + 1)}
+                onClick={() => setPage(page + 1)}
               >
                 Siguiente
               </Button>

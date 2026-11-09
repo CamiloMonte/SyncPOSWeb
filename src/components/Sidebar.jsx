@@ -1,9 +1,15 @@
 import { NavLink } from 'react-router-dom'
 import { LogOut } from 'lucide-react'
+import { useAuthStore } from '../store/useAuthStore'
 
 // Menu lateral oscuro.
-// Props: items (lista del menu: { path, label, icon }), onLogout, isAdmin
-export default function Sidebar({ items, onLogout, isAdmin }) {
+// Props: items (lista del menu: { path, label, icon }), isAdmin
+// onLogout ya no llega por props: la accion logout se toma directamente del store.
+export default function Sidebar({ items, isAdmin }) {
+  // HOOK: useAuthStore con selector. Las acciones del store no cambian de identidad,
+  // asi que seleccionar logout no provoca re-dibujos.
+  const logout = useAuthStore((state) => state.logout)
+
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col bg-dark">
       {/* Logo */}
@@ -63,7 +69,7 @@ export default function Sidebar({ items, onLogout, isAdmin }) {
         </div>
         {/* Cerrar sesion no es una pagina: es una accion, por eso es un <button> y no un NavLink */}
         <button
-          onClick={onLogout}
+          onClick={logout}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted hover:bg-dark-2"
         >
           <LogOut size={18} />

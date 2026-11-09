@@ -3,7 +3,8 @@ import { Search, Plus, Pencil, Power, Eye, EyeOff } from 'lucide-react'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import StatusPill from '../components/StatusPill'
-import { api, getSession } from '../services/api'
+import { api } from '../services/api'
+import { useAuthStore } from '../store/useAuthStore'
 
 // Formulario vacio para "Nuevo Usuario".
 // Usamos los MISMOS nombres de campo que la API de Laravel (name, email, password, rol...).
@@ -36,7 +37,8 @@ function getInitials(name) {
 
 export default function Users() {
   // Usuario que tiene la sesion abierta: se usa para bloquear "desactivar mi propia cuenta"
-  const currentUser = getSession()?.user
+  // HOOK: useAuthStore con selector: solo el id, que es lo unico que necesitamos aqui.
+  const currentUserId = useAuthStore((state) => state.user?.id)
 
   // ---------------------------------------------------------------
   // ESTADO (useState)
@@ -278,7 +280,7 @@ export default function Users() {
             )}
             {!loading &&
               users.map((u) => {
-                const isSelf = u.id === currentUser?.id
+                const isSelf = u.id === currentUserId
                 return (
                   // Las filas inactivas se ven con menos opacidad
                   <tr key={u.id} className={`border-t border-border ${u.activo ? '' : 'opacity-50'}`}>

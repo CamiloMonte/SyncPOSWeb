@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { Barcode, ScanLine, Package, Trash2, Minus, Plus, Send } from 'lucide-react'
 import Button from '../components/Button'
 import { api } from '../services/api'
+import { useCartStore, selectTotal, selectUnits } from '../store/useCartStore'
 import { formatCOP } from '../utils/format'
 
 // Milisegundos que esperamos despues de la ultima tecla antes de buscar en la API
@@ -37,15 +39,38 @@ export default function CashierPos() {
   // Sirve para volver a pedir el catalogo sin cambiar ningun filtro (ver el useEffect de productos)
   const [reloadKey, setReloadKey] = useState(0)
 
-  // Venta en curso
-  const [cart, setCart] = useState([]) // lista de { product, qty } (product es el objeto que entrega la API)
-  const [payment, setPayment] = useState('efectivo') // 'efectivo' o 'nequi'
+  // Venta en curso: el carrito, el metodo de pago y el registro de la venta viven en
+  // useCartStore (src/store/useCartStore.js). Aqui solo queda lo que le importa a ESTE componente.
+  // Zustand no reemplaza a useState: el dinero recibido solo lo usa esta pagina (para calcular
+  // el cambio), asi que se queda como estado local.
   const [received, setReceived] = useState('') // dinero recibido (texto, porque viene de un <input>)
 
-  // Registro de la venta
-  const [saving, setSaving] = useState(false) // true mientras se envia la venta al servidor
-  const [saleError, setSaleError] = useState('') // mensaje de error del panel de venta
-  const [saleSuccess, setSaleSuccess] = useState('') // mensaje verde de venta registrada
+  // HOOK: useCartStore con selectores. Cada llamada se suscribe SOLO a lo que pide.
+  // useShallow: cuando un selector devuelve un objeto nuevo en cada llamada (como este
+  // { items, payment, ... }), Zustand lo veria "distinto" siempre y redibujaria sin parar.
+  // useShallow compara campo por campo y solo avisa si alguno cambio de verdad.
+  const { cart, payment, saving, saleError, lastSale } = useCartStore(
+    useShallow((state) => ({
+      cart: state.items,
+      payment: state.paymentMethod,
+      saving: state.saving,
+      saleError: state.error,
+      lastSale: state.lastSale,
+    })),
+  )
+  // Valores derivados: selectores exportados por el store (el total no se guarda, se calcula)
+  const total = useCartStore(selectTotal)
+  const units = useCartStore(selectUnits)
+
+  // Acciones del store: son funciones estables, seleccionarlas no provoca re-dibujos.
+  const addToCart = useCartStore((state) => state.addProduct)
+  const incrementItem = useCartStore((state) => state.increment)
+  const decrementItem = useCartStore((state) => state.decrement)
+  const removeItem = useCartStore((state) => state.remove)
+  const clearCart = useCartStore((state) => state.clear)
+  const setPayment = useCartStore((state) => state.setPaymentMethod)
+  const registerSaleInStore = useCartStore((state) => state.registerSale)
+  const clearResult = useCartStore((state) => state.clearResult)
 
   // useRef guarda una referencia a un elemento del HTML (aqui, el cuadro de busqueda).
   // A diferencia de useState, cambiar un ref NO vuelve a dibujar la pagina.
@@ -59,6 +84,13 @@ export default function CashierPos() {
   //   []        -> solo una vez, al montar el componente
   //   [a, b]    -> al montar y cada vez que "a" o "b" cambien
   // ---------------------------------------------------------------
+
+  // 0) Al abrir el POS, borramos el mensaje de la venta anterior (el store sobrevive al
+  // cambio de pagina, pero el aviso verde/rojo no debe quedarse esperando en la pantalla).
+  // HOOK: useEffect con [] se ejecuta una sola vez, al montar el componente.
+  useEffect(() => {
+    clearResult()
+  }, [clearResult])
 
   // 1) Cargar las categorias UNA sola vez (dependencias vacias)
   useEffect(() => {
@@ -152,46 +184,8 @@ export default function CashierPos() {
     setReloadKey((key) => key + 1)
   }
 
-  // Agrega un producto al carrito (o suma 1 si ya existe) sin superar el stock.
-  // Usamos la forma funcional setCart((current) => ...) para partir siempre del valor mas reciente.
-  // INMUTABILIDAD: nunca se modifica el arreglo del estado; se crea uno NUEVO (con map o con
-  // el operador spread "...") y React detecta el cambio para volver a dibujar.
-  function addToCart(product) {
-    // Sin stock no se puede vender
-    if (product.stock <= 0) return
-
-    setCart((current) => {
-      const existing = current.find((item) => item.product.id === product.id)
-
-      if (!existing) return [...current, { product, qty: 1 }]
-
-      // Validamos contra el stock en el navegador solo para dar una buena experiencia;
-      // el servidor vuelve a validarlo al registrar la venta, asi que esta no es la unica defensa.
-      if (existing.qty >= product.stock) return current
-
-      return current.map((item) => (item.product.id === product.id ? { ...item, qty: item.qty + 1 } : item))
-    })
-  }
-
-  // Cambia la cantidad (+1 o -1). Si llega a 0, el producto sale del carrito.
-  function changeQty(productId, delta) {
-    setCart((current) =>
-      current
-        // map: devuelve un arreglo nuevo; solo el item que coincide recibe la cantidad nueva
-        .map((item) => {
-          if (item.product.id !== productId) return item
-          // Math.min impide pasar del stock disponible (el servidor lo valida de nuevo)
-          return { ...item, qty: Math.min(item.qty + delta, item.product.stock) }
-        })
-        // filter: descarta los items cuya cantidad llego a 0
-        .filter((item) => item.qty > 0),
-    )
-  }
-
-  // filter devuelve un arreglo nuevo sin el producto indicado
-  function removeItem(productId) {
-    setCart((current) => current.filter((item) => item.product.id !== productId))
-  }
+  // Las acciones del carrito (agregar, sumar, restar, quitar, vaciar) ya no estan aqui:
+  // viven en el store, con la misma logica (tope de stock, quitar al llegar a 0).
 
   // El boton "Escanear Codigo" solo pone el cursor en el cuadro de busqueda.
   // Un lector de codigos de barras USB funciona como un teclado: "escribe" el codigo
@@ -225,42 +219,17 @@ export default function CashierPos() {
     }
   }
 
-  // Registra la venta en el servidor
+  // Registra la venta: la peticion y el manejo de loading/error los hace la accion del store.
+  // Aqui solo reaccionamos al resultado (limpiar lo recibido y refrescar el catalogo).
   async function registerSale() {
-    setSaving(true)
-    setSaleError('')
-    setSaleSuccess('')
+    const sale = await registerSaleInStore()
+    if (!sale) return // fallo: el store ya dejo el mensaje de error y conservo el carrito
 
-    try {
-      // Solo enviamos el id y la cantidad de cada producto, NUNCA los precios ni el total.
-      // El servidor toma los precios de la base de datos y calcula el total el mismo;
-      // asi nadie puede alterar un precio desde el navegador.
-      const response = await api.post('/ventas', {
-        metodo_pago: payment,
-        items: cart.map((item) => ({ producto_id: item.product.id, cantidad: item.qty })),
-      })
+    setReceived('')
 
-      // Mostramos el numero y el total que devuelve el SERVIDOR: es la fuente de verdad
-      // (el precio pudo cambiar mientras el cajero armaba el carrito).
-      const sale = response.data
-      setSaleSuccess(`Venta ${sale.numero} registrada por ${formatCOP(Number(sale.total))}`)
-
-      // La venta termino: limpiamos el carrito y el valor recibido
-      setCart([])
-      setReceived('')
-
-      // Volvemos a pedir el catalogo porque el stock cambio con esta venta.
-      // Si no, la pantalla seguiria mostrando existencias que ya no son reales.
-      reload()
-    } catch (err) {
-      // 422 = el servidor rechazo la venta (por ejemplo, stock insuficiente). Su primer
-      // mensaje es el mas claro; si no existe, usamos el mensaje general del error.
-      // El carrito NO se borra para que el cajero pueda corregirlo y reintentar.
-      setSaleError(err.errors?.items?.[0] ?? err.message)
-    } finally {
-      // finally se ejecuta siempre: aqui habilitamos de nuevo el boton
-      setSaving(false)
-    }
+    // Volvemos a pedir el catalogo porque el stock cambio con esta venta.
+    // Si no, la pantalla seguiria mostrando existencias que ya no son reales.
+    reload()
   }
 
   // ---------------------------------------------------------------
@@ -270,9 +239,7 @@ export default function CashierPos() {
   // carrito, siempre es correcto.
   // ---------------------------------------------------------------
 
-  // reduce recorre el carrito acumulando un valor. Number(): la API envia el precio como texto ("13500.00").
-  const total = cart.reduce((sum, item) => sum + Number(item.product.precio_venta) * item.qty, 0)
-  const units = cart.reduce((sum, item) => sum + item.qty, 0)
+  // total y units vienen de los selectores del store (ver arriba); lo recibido y el cambio son locales.
   const receivedAmount = Number(received || 0)
   const change = Math.max(0, receivedAmount - total) // nunca negativo
   const missing = total - receivedAmount // cuanto falta si el cliente entrego menos del total
@@ -403,7 +370,7 @@ export default function CashierPos() {
               {cart.length} {cart.length === 1 ? 'producto' : 'productos'} · {units} {units === 1 ? 'unidad' : 'unidades'}
             </p>
           </div>
-          <button onClick={() => setCart([])} className="text-sm font-medium text-danger">Vaciar</button>
+          <button onClick={clearCart} className="text-sm font-medium text-danger">Vaciar</button>
         </div>
 
         <div className="max-h-[360px] min-h-[160px] space-y-3 overflow-y-auto px-5 pb-5">
@@ -427,13 +394,13 @@ export default function CashierPos() {
               </div>
               <div className="mt-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <button onClick={() => changeQty(product.id, -1)} className="rounded-lg border border-border p-1.5">
+                  <button onClick={() => decrementItem(product.id)} className="rounded-lg border border-border p-1.5">
                     <Minus size={14} />
                   </button>
                   <span className="w-6 text-center font-semibold">{qty}</span>
                   {/* Se deshabilita al llegar al stock disponible */}
                   <button
-                    onClick={() => changeQty(product.id, 1)}
+                    onClick={() => incrementItem(product.id)}
                     disabled={qty >= product.stock}
                     className="rounded-lg bg-sena p-1.5 text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -448,9 +415,9 @@ export default function CashierPos() {
 
         <div className="space-y-4 bg-background p-5">
           {/* Mensaje verde con el resultado de la ultima venta (viene del servidor) */}
-          {saleSuccess && (
+          {lastSale && (
             <div className="rounded-lg border border-sena bg-sena-soft px-4 py-3 text-sm font-medium text-sena-hover">
-              {saleSuccess}
+              Venta {lastSale.numero} registrada por {formatCOP(Number(lastSale.total))}
             </div>
           )}
           {/* Mensaje rojo si el servidor rechazo la venta o no hubo conexion */}
